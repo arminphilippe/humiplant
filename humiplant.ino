@@ -1,8 +1,8 @@
 
 //Analog Pins
 const int waterLevelPin = A0;
-const int soilPin = A1;
-const int waterLevelMosFetPin = 9;
+const int soilPinVelleman = A1;
+const int soilPinCapacitive = A2;
 
 //digital Pins
 const int redLedPin = 10;
@@ -10,17 +10,23 @@ const int greenLedPin = 11;
 const int blueLedPin = 12;
 const int buttonPin = 2;
 const int onlyGreenLEDPin = 13;
+const int moistureSensorMosFetPin = 9;
+const int valveMosFetPin = 8;
 
 //time constants
 const int sensorConvergenceTime_ms = 6;
-const int measurementInterval_s = 30;
-const int communicationInterval_s = 10;
+const int measurementInterval_s = 4; //30; // 4;
+const int communicationInterval_s = 1; //10; //1;
 int serialCtr = 0;
 
-// water level and humidity parameters
+// water level and humidity parameters -> Velleman soil sensor
 const int waterLevelEmptyAnalogVal = 50; //0 would actually be totally dry
-const int soilTooDryThreshold = 400;
+const int soilTooDryThreshold = 430;
 
+//sensor calibration parameters DFRobot SEN0193
+//const int capacitiveDryInterval[2] = {430, 520};
+//const int capacitiveMoistInterval[2] = {350, 430};
+//const int capacitiveSuperWetInterval[2] = {260, 350};
 
 // colors
 int red[3] = {150, 0, 0};
@@ -38,20 +44,41 @@ int getAnalogHumiditySensorReading(const int, const int, const int);
 void communicateSystemStatus (int systemStatus, const int redLedPin);
 void blinkColorLED(const int, const int, const int, const int []);
 
-
-
 //------------------------------------------------------------------------------------------------------------
 void setup(){
   pinMode(waterLevelPin, INPUT);
-  pinMode(soilPin, INPUT);
-  pinMode(waterLevelMosFetPin, OUTPUT);
+  pinMode(soilPinVelleman, INPUT);
+  pinMode(soilPinCapacitive, INPUT);
+  pinMode(moistureSensorMosFetPin, OUTPUT);
   pinMode(redLedPin, OUTPUT);
   pinMode(buttonPin, INPUT);
   pinMode(onlyGreenLEDPin, OUTPUT);
+  pinMode(valveMosFetPin, OUTPUT); 
   
-  digitalWrite(waterLevelMosFetPin, LOW);
+  digitalWrite(moistureSensorMosFetPin, LOW);
+  digitalWrite(valveMosFetPin, LOW);
 
   Serial.begin(9600);
+
+//  while(true) {
+//   int moist = analogRead(soilPinCapacitive);
+//    //int moist = getAnalogHumiditySensorReading(soilPinCapacitive, moistureSensorMosFetPin, capacitiveSensorConvergenceTime_ms);
+//
+//    Serial.print("Moisture: ");
+//    Serial.print(moist);
+//    Serial.print("\n");
+//
+//    delay(1000);
+//
+////    digitalWrite(valveMosFetPin, HIGH); 
+////   
+////    delay(2000);
+////
+////    digitalWrite(valveMosFetPin, LOW); 
+////
+////    delay(2000);
+//    
+//  }
  
 }
 
@@ -85,13 +112,13 @@ void loop(){
     // check reservoir water level
    
     //read out analog humidity sensor (with mosfet to safe lifetime) 
-    currentWaterLevelAnalogVal = getAnalogHumiditySensorReading(waterLevelPin, waterLevelMosFetPin, sensorConvergenceTime_ms);
+    currentWaterLevelAnalogVal = getAnalogHumiditySensorReading(waterLevelPin, moistureSensorMosFetPin, sensorConvergenceTime_ms);
 
     // check soil moisture
-    soilHumidity = getAnalogHumiditySensorReading(soilPin, waterLevelMosFetPin, sensorConvergenceTime_ms);
-    
+    soilHumidity = analogRead(soilPinCapacitive);
+
     // check system status and store 
-    if (soilHumidity < soilTooDryThreshold) { // soil humidity too low
+    if (soilHumidity > soilTooDryThreshold) { // soil humidity too low
       if (currentWaterLevelAnalogVal > waterLevelEmptyAnalogVal){ // if reservoir okay
         systemStatus = 2;
       }
