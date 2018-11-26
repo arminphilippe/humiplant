@@ -1,22 +1,25 @@
 
+#include <SPI.h>
+#include <SD.h>
+
 //Analog Pins
 const int waterLevelPin = A0;
 const int soilPinVelleman = A1;
 const int soilPinCapacitive = A2;
 
 //digital Pins
-const int redLedPin = 10;
-const int greenLedPin = 11;
-const int blueLedPin = 12;
+const int redLedPin = 3;
+const int greenLedPin = 5;
+const int blueLedPin = 6;;
 const int buttonPin = 2;
-const int onlyGreenLEDPin = 13;
+const int onlyGreenLEDPin = 7;
 const int moistureSensorMosFetPin = 9;
 const int valveMosFetPin = 8;
 
 //time constants
 const int sensorConvergenceTime_ms = 6;
-const int measurementInterval_s = 4; //30; // 4;
-const int communicationInterval_s = 1; //10; //1;
+const int measurementInterval_s = 30; // 4;
+const int communicationInterval_s = 10; //1;
 int serialCtr = 0;
 
 // water level and humidity parameters -> Velleman soil sensor
@@ -44,6 +47,22 @@ int getAnalogHumiditySensorReading(const int, const int, const int);
 void communicateSystemStatus (int systemStatus, const int redLedPin);
 void blinkColorLED(const int, const int, const int, const int []);
 
+File loggingFile;
+String logFileName = "log_0.txt";
+String loggingString;
+
+
+int currentWaterLevelAnalogVal;
+int soilHumidity;
+int systemStatus = 1; // capture current status between measurements to decouple loops
+// 1: all good
+// 2: humidity too low but reservoir ok -> watering
+// 3: humidity okay but reservoir too low
+// 4: emergency: humidity too low and reservoir empty
+unsigned long previousMillis = 0;
+unsigned long currentMillis = 0;
+int buttonPressed = 0;
+
 //------------------------------------------------------------------------------------------------------------
 void setup(){
   pinMode(waterLevelPin, INPUT);
@@ -51,14 +70,45 @@ void setup(){
   pinMode(soilPinCapacitive, INPUT);
   pinMode(moistureSensorMosFetPin, OUTPUT);
   pinMode(redLedPin, OUTPUT);
+  pinMode(greenLedPin, OUTPUT);
+  pinMode(blueLedPin, OUTPUT);
   pinMode(buttonPin, INPUT);
   pinMode(onlyGreenLEDPin, OUTPUT);
   pinMode(valveMosFetPin, OUTPUT); 
   
   digitalWrite(moistureSensorMosFetPin, LOW);
   digitalWrite(valveMosFetPin, LOW);
+  digitalWrite(redLedPin, LOW);
+  digitalWrite(greenLedPin, LOW);
+  digitalWrite(blueLedPin, LOW);
 
+  // Open serial communications and wait for port to open:
   Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  Serial.print("Initializing SD card...");
+
+  if (!SD.begin(4)) {
+    Serial.println("initialization failed!");
+    digitalWrite(redLedPin, HIGH); 
+    while(1);
+  }
+  Serial.println("initialization done. Logging to:");
+
+  Serial.println(logFileName);
+
+//while (true){
+//  
+//  blinkColorLED(redLedPin, greenLedPin, blueLedPin, red);
+//  delay (1000);
+//  blinkColorLED(redLedPin, greenLedPin, blueLedPin, green);
+//  delay (1000);
+//  blinkColorLED(redLedPin, greenLedPin, blueLedPin, blue);
+//  delay (1000);
+//  
+//  }
 
 //  while(true) {
 //   int moist = analogRead(soilPinCapacitive);
@@ -84,16 +134,7 @@ void setup(){
 
 
 //------------------------------------------------------------------------------------------------------------
-int currentWaterLevelAnalogVal;
-int soilHumidity;
-int systemStatus = 1; // capture current status between measurements to decouple loops
-// 1: all good
-// 2: humidity too low but reservoir ok -> watering
-// 3: humidity okay but reservoir too low
-// 4: emergency: humidity too low and reservoir empty
-unsigned long previousMillis = 0;
-unsigned long currentMillis = 0;
-int buttonPressed = 0;
+
 
 
 void loop(){
@@ -104,7 +145,9 @@ void loop(){
 
     if (serialCtr ==0) {
       //log header only once
-      Serial.print("water level,soil humidity,measuring_0_1,system status,wateredPlantManually\n");
+      loggingString = "water level,soil humidity,measuring_0_1,system status,wateredPlantManually";
+      writeStringLineToFile(logFileName, loggingString);
+      Serial.println(loggingString);
       serialCtr++;
     }
     previousMillis = currentMillis; // set counting back
@@ -134,31 +177,38 @@ void loop(){
         systemStatus = 1;
       }
     }
-    Serial.print(currentWaterLevelAnalogVal);
-    Serial.print(",");
-    Serial.print(soilHumidity);
-    Serial.print(",");
-    Serial.print(1);
-    Serial.print(",");
-    Serial.print(systemStatus);
-    Serial.print(",");
-    Serial.print(buttonPressed);
-    Serial.print("\n");
+
+    loggingString = 
+      (String) currentWaterLevelAnalogVal + 
+      "," + 
+      (String) soilHumidity +
+      "," +
+      "1" +
+      "," +
+      (String) systemStatus +
+      "," +
+      (String) buttonPressed;
+
+    writeStringLineToFile(logFileName, loggingString);
+    Serial.println(loggingString);
   }
 
   //blink LED for system status 
   communicateSystemStatus ( systemStatus, redLedPin); 
 
-  Serial.print(currentWaterLevelAnalogVal);
-  Serial.print(",");
-  Serial.print(soilHumidity);
-  Serial.print(",");
-  Serial.print(0);
-  Serial.print(",");
-  Serial.print(systemStatus);
-  Serial.print(",");
-  Serial.print(buttonPressed);
-  Serial.print("\n");
+    loggingString = 
+      (String) currentWaterLevelAnalogVal + 
+      "," + 
+      (String) soilHumidity +
+      "," +
+      "0" +
+      "," +
+      (String) systemStatus +
+      "," +
+      (String) buttonPressed;
+
+  writeStringLineToFile(logFileName, loggingString);
+  Serial.println(loggingString);
 
 
   //check for button pressing
@@ -172,9 +222,6 @@ void loop(){
   else {
     buttonPressed = 0;  
   }
-  
-  
-
   
   
   // only measure once in a while, slow system
@@ -258,6 +305,25 @@ void blinkLED(const int pin) {
     digitalWrite(pin, LOW);    
     delay(timeMs);
   }
+}
+
+void writeStringLineToFile(String logFileName, String stringLineToPrint) {
+  File dataFile = SD.open(logFileName, FILE_WRITE);
+
+  // if the file is available, write to it:
+  if (dataFile) {
+    dataFile.println(stringLineToPrint);
+    delay(50);
+    dataFile.close();
+  }
+  // if the file isn't open, pop up an error:
+  else {
+    String errString = "error opening" + logFileName;
+    Serial.println(errString);
+    digitalWrite(redLedPin, HIGH); 
+    while(1);
+  }
+  
 }
 
 ////unused, only red LED
